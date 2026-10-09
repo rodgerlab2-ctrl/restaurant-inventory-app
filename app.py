@@ -193,7 +193,7 @@ def remembered_options(items: list[dict], field: str, defaults: list[str]) -> li
     return list(dict.fromkeys([*defaults, *sorted(remembered, key=str.lower)]))
 
 
-def manager_view(master_sheet, ledger_sheet, audit_sheet) -> None:
+def manager_view() -> None:
     st.title("📦 Daily Inventory")
     day = operational_date()
     st.caption(
@@ -228,6 +228,9 @@ def manager_view(master_sheet, ledger_sheet, audit_sheet) -> None:
                     "Save Purchase", type="primary", use_container_width=True
                 )
             if submitted:
+                # Open the Google Sheets write client only after the manager saves.
+                # All dashboard reads above are served from the cached CSV export.
+                ledger_sheet = get_write_sheets()["Daily_Ledger"]
                 index = existing_row(ledger, day, item["Shortcode"])
                 existing_close = (
                     as_number(ledger.loc[index, "Closing Stock"])
@@ -252,6 +255,7 @@ def manager_view(master_sheet, ledger_sheet, audit_sheet) -> None:
                     "Save Closing Stock", type="primary", use_container_width=True
                 )
             if submitted:
+                ledger_sheet = get_write_sheets()["Daily_Ledger"]
                 index = existing_row(ledger, day, item["Shortcode"])
                 existing_purchase = (
                     as_number(ledger.loc[index, "Purchases"])
@@ -324,6 +328,7 @@ def manager_view(master_sheet, ledger_sheet, audit_sheet) -> None:
             elif any(str(item["Item Name"]).casefold() == name.strip().casefold() for item in items):
                 st.error("That item name already exists.")
             else:
+                master_sheet = get_write_sheets()["Master_Items"]
                 master_sheet.append_row(
                     [name.strip(), shortcode, category, unit, 0],
                     value_input_option="USER_ENTERED",
@@ -380,6 +385,7 @@ def manager_view(master_sheet, ledger_sheet, audit_sheet) -> None:
                     if not rows_to_add:
                         st.info("No new complete items were found. Existing names were skipped.")
                     else:
+                        master_sheet = get_write_sheets()["Master_Items"]
                         for row in rows_to_add:
                             master_sheet.append_row(row, value_input_option="USER_ENTERED")
                         finish_write(
@@ -455,6 +461,9 @@ def manager_view(master_sheet, ledger_sheet, audit_sheet) -> None:
                     elif row_number is None:
                         st.error("The selected item could not be located.")
                     else:
+                        sheets = get_write_sheets()
+                        master_sheet = sheets["Master_Items"]
+                        audit_sheet = sheets["Audit_Log"]
                         master_sheet.update(
                             values=[[
                                 new_name.strip(),
@@ -506,6 +515,9 @@ def manager_view(master_sheet, ledger_sheet, audit_sheet) -> None:
                 elif not reason.strip():
                     st.error("Please provide a reason for the correction.")
                 else:
+                    sheets = get_write_sheets()
+                    ledger_sheet = sheets["Daily_Ledger"]
+                    audit_sheet = sheets["Audit_Log"]
                     purchases = new_value if field == "Purchases" else as_number(entry["Purchases"])
                     closing = new_value if field == "Closing Stock" else as_number(entry["Closing Stock"])
                     opening = as_number(entry["Opening Stock"])
@@ -591,13 +603,8 @@ def main() -> None:
         st.success(message)
 
     try:
-        sheets = get_write_sheets()
         if mode == "Manager":
-            manager_view(
-                sheets["Master_Items"],
-                sheets["Daily_Ledger"],
-                sheets["Audit_Log"],
-            )
+            manager_view()
         else:
             owner_view()
     except HTTPError as exc:
